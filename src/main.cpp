@@ -50,28 +50,22 @@ void scroll(GLFWwindow* window, double x_offset, double y_offset) {
 
 class Terrain : public Drawable {
 public:
-    Terrain(Drawable *parent = nullptr) : Drawable(::program, parent) {
+    Terrain(vector<float> heights, int size, Drawable *parent = nullptr) :
+            Drawable(::program, parent), size(size), vertices(size * size), normals(size * size) {
         int p, q;
-        ifstream is("textures/fontvieille.mnt.txt");
-        std::string buffer;
-        getline(is, buffer);
-        std::vector<glm::vec3> vertex(size * size);
         std::vector<glm::vec2> uv(size * size);
-        std::vector<glm::vec3> normal(size * size);
         std::vector<glm::vec3> triangle_normal((std::size_t)((size - 1) * (size - 1) * 2));
-        float duv = 1.f / (size - 1), h;
+        float duv = 1.f / (size - 1);
         p = 0;
         for (int i = 0; i < size; ++i) {
             for (int j = 0; j < size; ++j) {
-                is >> h;
                 uv[p] = {j * duv, (size - i - 1) * duv};
-                vertex[p] = {j - size / 2, h / 50., i - size / 2};
-                normal[p] = {0, 0, 0};
+                vertices[p] = {j - size / 2, heights[p] / 25., i - size / 2};
                 ++p;
             }
         }
         this->texture = new Texture("textures/fontvieille.tga", GL_BGR);
-        this->geometry = new DataBuffer3(vertex, 0);
+        this->geometry = new DataBuffer3(vertices, 0);
         this->color = new UniformColor({0, 0, 0, 1}, (GLsizei)(size * size));
         this->uv = new DataBuffer2(uv, 2);
 
@@ -83,14 +77,14 @@ public:
                 index[p++] = (unsigned int)((i * size) + j);
                 index[p++] = (unsigned int)(((i + 1) * size) + j);
                 triangle_normal[q++] = glm::normalize(
-                        glm::cross((vertex[index[p - 2]] - vertex[index[p - 3]]),
-                                   (vertex[index[p - 1]] - vertex[index[p - 3]])));
+                        glm::cross((vertices[index[p - 2]] - vertices[index[p - 3]]),
+                                   (vertices[index[p - 1]] - vertices[index[p - 3]])));
                 index[p++] = (unsigned int)((i * size) + j + 1);
                 index[p++] = (unsigned int)(((i + 1) * size) + j);
                 index[p++] = (unsigned int)(((i + 1) * size) + j + 1);
                 triangle_normal[q++] = glm::normalize(
-                        glm::cross((vertex[index[p - 2]] - vertex[index[p - 3]]),
-                                   (vertex[index[p - 1]] - vertex[index[p - 3]])));
+                        glm::cross((vertices[index[p - 2]] - vertices[index[p - 3]]),
+                                   (vertices[index[p - 1]] - vertices[index[p - 3]])));
             }
         }
         this->index_buffer = new IndexBuffer(index);
@@ -99,35 +93,100 @@ public:
         for (int i = 0; i < size; ++i) {
             int row_first = i * (size - 1) * 2, prev_row_first = (i - 1) * (size - 1) * 2;
             if (i < size - 1)
-                normal[p] += triangle_normal[row_first];
+                normals[p] += triangle_normal[row_first];
             if (i > 0)
-                normal[p] += triangle_normal[prev_row_first] +
+                normals[p] += triangle_normal[prev_row_first] +
                         triangle_normal[prev_row_first + 1];
-            normal[p] = glm::normalize(normal[p]);
+            normals[p] = glm::normalize(normals[p]);
             ++p;
             for (int j = 1; j < size - 1; ++j) {
                 if (i < size - 1)
                     for (int k = 2 * j - 2; k <= 2 * j; ++k)
-                        normal[p] += triangle_normal[row_first + k];
+                        normals[p] += triangle_normal[row_first + k];
                 if (i > 0)
                     for (int k = 2 * j - 1; k <= 2 * j + 1; ++k)
-                        normal[p] += triangle_normal[prev_row_first + k];
-                normal[p] = glm::normalize(normal[p]);
+                        normals[p] += triangle_normal[prev_row_first + k];
+                normals[p] = glm::normalize(normals[p]);
                 ++p;
             }
             if (i < size - 1)
-                normal[p] += triangle_normal[row_first + 2 * size - 4] +
+                normals[p] += triangle_normal[row_first + 2 * size - 4] +
                         triangle_normal[row_first + 2 * size - 3];
             if (i > 0)
-                normal[p] += triangle_normal[prev_row_first + 2 * size - 3];
-            normal[p] = glm::normalize(normal[p]);
+                normals[p] += triangle_normal[prev_row_first + 2 * size - 3];
+            normals[p] = glm::normalize(normals[p]);
             ++p;
         }
-        this->normal = new DataBuffer3(normal, 3);
+        this->normal = new DataBuffer3(normals, 3);
+    }
+
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> normals;
+    int size;
+};
+
+
+class Normals : public Drawable {
+public:
+    Normals(Terrain *terrain, Drawable *parent = nullptr) : Drawable(new MvpProgram(), parent) {
+        this->draw_mode = GL_LINES;
+        size = terrain->size * terrain->size * 2;
+        std::vector<glm::vec3> v(size);
+        this->color = new UniformColor(glm::vec4(1, 0, 0, 1), size);
+        int p = 0;
+        for (int i = 0; i < terrain->size; ++i)
+            for (int j = 0; j < terrain->size; ++j) {
+                v[p * 2] = terrain->vertices[p];
+                v[p * 2 + 1] = terrain->vertices[p] + terrain->normals[p];
+                ++p;
+            }
+        this->geometry = new DataBuffer3(v);
+    }
+    virtual void draw_geometry() {
+        for (int i = 0; i < size; i += 2)
+            glDrawArrays(draw_mode, i, 2);
     }
 private:
-    int size = 101;
+    int size;
 };
+
+const int orig_size = 101;
+
+vector<float> getData() {
+    ifstream is("textures/fontvieille.mnt.txt");
+    std::string buffer;
+    getline(is, buffer);
+    vector<int> orig_heights(orig_size * orig_size);
+    for (int &h : orig_heights)
+        is >> h;
+
+    int size = orig_size * 2 - 1;
+    vector<float> heights(size * size);
+    int p = 0;
+    for (int i = 0; i < orig_size; ++i) {
+        int q = i * orig_size;
+        for (int j = 0; j < orig_size - 1; ++j) {
+            heights[p++] = orig_heights[q];
+            heights[p++] = (orig_heights[q] + orig_heights[q + 1] ) / 2.f;
+            ++q;
+        }
+        heights[p++] = orig_heights[q];
+        ++q;
+
+        if (i < orig_size - 1) {
+            int q = i * orig_size;
+            for (int j = 0; j < orig_size - 1; ++j) {
+                heights[p++] = (orig_heights[q] + orig_heights[q + orig_size]) / 2.f;
+                heights[p] = (orig_heights[q + orig_size] + orig_heights[q + orig_size + 1]) / 4.f + heights[p - size] / 2.f;
+                ++p;
+                ++q;
+            }
+            heights[p++] = (orig_heights[q] + orig_heights[q + orig_size]) / 2.f;
+        }
+    }
+    return heights;
+    //return vector<float>(orig_heights.begin(), orig_heights.end());
+}
 
 
 class HouseScene : public Scene {
@@ -137,7 +196,11 @@ public:
     HouseScene(Camera *camera) : Scene("House", 1000, 700, camera) { }
 
     void init() {
-        terrain = new Terrain(center);
+        terrain = new Terrain(getData(), orig_size * 2 - 1, center);
+        /*
+        Drawable *normals = new Normals(terrain, center);
+        add(normals);
+         */
         add(terrain);
         set_wheel_callback(scroll);
     }
@@ -159,13 +222,12 @@ public:
     void before_iteration(float time) {
         ::program->set_uniform("lightPosition",
                                //glm::vec3(center->get_model(time) * glm::rotateX(glm::vec4(0, 60, 0, 1), time * .5f)));
-                               glm::vec3(center->get_model(time) * glm::vec4(0, 40, 0, 1)));
+                               glm::vec3(center->get_model(time) * glm::vec4(0, 60, 0, 1)));
         ::program->set_uniform("lightColor", {.9, .9, .9});
         ::program->set_uniform("ambientLight", {.2, .2, .2});
     }
 
 };
-
 
 int main() {
     camera = new PerspectiveCamera(1000, 700, 1.5, 1, 200);

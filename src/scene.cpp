@@ -30,6 +30,7 @@ Scene::Scene(const char *title, int width, int height, Camera *camera) :
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
+    glEnable(GL_SMOOTH);
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 }
 
